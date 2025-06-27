@@ -8,8 +8,10 @@ import path from 'path'
 const CONFIG = {
   // 并发处理详情页的数量
   CONCURRENT_PAGES: 5,
-  // 图片存储的目录名
-  IMAGE_DIR: 'images',
+  // 卡牌图片存储的目录名
+  CARD_IMAGE_DIR: 'card-images',
+  // 卡包符号图片存储的目录名
+  EXPANSION_SYMBOL_IMAGE_DIR: 'expansion-symbol-images',
   // 增量写入的JSONL文件名
   JSONL_FILE_NAME: 'pokemon_cards.jsonl',
   // 最终输出的标准JSON文件名
@@ -61,6 +63,8 @@ const energyMap = {
  */
 async function processDetailPage(browser, detailUrl) {
   const detailPage = await browser.newPage()
+  // 确保为每个新创建的详情页设置视口
+  await detailPage.setViewport({ width: 1920, height: 1080 })
   try {
     await detailPage.goto(detailUrl, { waitUntil: 'networkidle2' })
 
@@ -75,14 +79,14 @@ async function processDetailPage(browser, detailUrl) {
       const getCommonData = () => {
         return {
           card_id: getAttr('.cardImage img', 'src')?.split('/').pop()?.split('.')[0] || null,
-          image_url: getAttr('.cardImage img', 'src'),
+          card_image_url: getAttr('.cardImage img', 'src'), // 临时字段，用于下载
           name: getText('h1.pageHeader'),
           card_info: {
             illustrator: getText('.illustrator a'),
             card_number: null,
             rarity: null,
             set: null,
-            expansion_symbol_img: getAttr('.expansionColumn .expansionSymbol img', 'src'),
+            expansion_symbol_image_url: getAttr('.expansionColumn .expansionSymbol img', 'src'), // 临时字段，用于下载
             expansion_symbol: null,
             alpha: getText('.expansionColumn .alpha'),
             collector_number: getText('.expansionColumn .collectorNumber'),
@@ -117,7 +121,7 @@ async function processDetailPage(browser, detailUrl) {
             card_category: '宝可梦卡',
             card_type,
             name: { zh: name_zh, en: null },
-            image_url: commonData.image_url,
+            card_image_url: commonData.card_image_url,
             stats: { hp: parseInt(getText('.mainInfomation .number'), 10) || null },
             abilities: Array.from(document.querySelectorAll('.skillInformation .skill')).map((el) => ({
               name: getText('.skillName', el),
@@ -167,7 +171,7 @@ async function processDetailPage(browser, detailUrl) {
             card_category: '训练家卡',
             sub_type: commonHeaderText,
             name: commonData.name,
-            image_url: commonData.image_url,
+            card_image_url: commonData.card_image_url,
             effect: getText('.skillEffect'),
             card_info: commonData.card_info,
             appearance: commonData.appearance,
@@ -182,7 +186,7 @@ async function processDetailPage(browser, detailUrl) {
             card_category: '能量卡',
             sub_type: commonHeaderText,
             name: commonData.name,
-            image_url: commonData.image_url,
+            card_image_url: commonData.card_image_url,
             effect: commonHeaderText === '特殊能量卡' ? getText('.skillEffect') : null,
             card_info: commonData.card_info,
             appearance: commonData.appearance,
@@ -200,22 +204,42 @@ async function processDetailPage(browser, detailUrl) {
     const finalCardData = cardDataPayload.data
     finalCardData.card_url = cardDataPayload.card_url
 
-    let relativeImagePath = null
-    if (finalCardData.image_url) {
-      const imageName = path.basename(finalCardData.image_url)
-      relativeImagePath = path.join(CONFIG.IMAGE_DIR, imageName)
+    // 下载主卡图
+    let relativeCardImagePath = null
+    if (finalCardData.card_image_url) {
+      const imageName = path.basename(finalCardData.card_image_url)
+      relativeCardImagePath = path.join(CONFIG.CARD_IMAGE_DIR, imageName)
       try {
-        const imageResponse = await detailPage.goto(finalCardData.image_url)
-        if (imageResponse.ok()) await fs.writeFile(relativeImagePath, await imageResponse.buffer())
-        else relativeImagePath = null
+        const imageResponse = await detailPage.goto(finalCardData.card_image_url)
+        if (imageResponse.ok()) await fs.writeFile(relativeCardImagePath, await imageResponse.buffer())
+        else relativeCardImagePath = null
       } catch (e) {
-        console.log(`  下载图片失败: ${e.message}`)
-        relativeImagePath = null
+        console.log(`  下载卡图失败: ${e.message}`)
+        relativeCardImagePath = null
       }
     }
 
-    delete finalCardData.image_url
-    finalCardData.image_path = relativeImagePath
+    // 下载卡包符号图
+    let relativeExpansionSymbolPath = null
+    if (finalCardData.card_info.expansion_symbol_image_url) {
+      const imageName = path.basename(finalCardData.card_info.expansion_symbol_image_url)
+      relativeExpansionSymbolPath = path.join(CONFIG.EXPANSION_SYMBOL_IMAGE_DIR, imageName)
+      try {
+        const imageResponse = await detailPage.goto(finalCardData.card_info.expansion_symbol_image_url)
+        if (imageResponse.ok()) await fs.writeFile(relativeExpansionSymbolPath, await imageResponse.buffer())
+        else relativeExpansionSymbolPath = null
+      } catch (e) {
+        console.log(`  下载卡包符号失败: ${e.message}`)
+        relativeExpansionSymbolPath = null
+      }
+    }
+
+    // 设置最终路径并删除临时URL字段
+    delete finalCardData.card_image_url
+    finalCardData.card_image_path = relativeCardImagePath
+
+    delete finalCardData.card_info.expansion_symbol_image_url
+    finalCardData.card_info.expansion_symbol_image_path = relativeExpansionSymbolPath
 
     return finalCardData
   } catch (err) {
@@ -231,12 +255,16 @@ async function processDetailPage(browser, detailUrl) {
  */
 async function scrapePokemonCards() {
   console.log('进行初始化设置...')
-  await fs.mkdir(CONFIG.IMAGE_DIR, { recursive: true })
+  // 同时创建两个图片目录
+  await fs.mkdir(CONFIG.CARD_IMAGE_DIR, { recursive: true })
+  await fs.mkdir(CONFIG.EXPANSION_SYMBOL_IMAGE_DIR, { recursive: true })
   await fs.writeFile(CONFIG.JSONL_FILE_NAME, '', 'utf8')
 
   console.log('启动浏览器...')
   const browser = await puppeteer.launch({ headless: 'new' })
   const page = await browser.newPage()
+  // 为主列表页面设置视口
+  await page.setViewport({ width: 1920, height: 1080 })
 
   try {
     // --- 1. 边翻页边处理 ---
@@ -267,7 +295,7 @@ async function scrapePokemonCards() {
     for (let currentPage = startPage; currentPage <= totalPages; currentPage++) {
       if (currentPage !== startPage) {
         const currentPageUrl = new URL(baseUrl.toString())
-        currentPageUrl.searchParams.set('page', currentPage)
+        currentPageUrl.searchParams.set('pageNo', currentPage)
         console.log(`\n- 正在导航到列表页面 ${currentPage}/${totalPages}...`)
         await page.goto(currentPageUrl.toString(), { waitUntil: 'networkidle2' })
       } else {
