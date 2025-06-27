@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer'
 import fs from 'fs/promises'
+import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 
 // =================================================================
@@ -97,13 +98,11 @@ async function processDetailPage(browser, detailUrl) {
         }
       }
 
-      // ---- 卡片种类判断 (分类器) ----
       const isPokemonCard = document.querySelector('.evolveMarker') !== null
       const commonHeaderText = getText('.cardInformationColumn .commonHeader')
       const knownTrainerTypes = ['物品卡', '支援者卡', '競技場卡', '寶可夢道具']
       const knownEnergyTypes = ['基本能量卡', '特殊能量卡']
 
-      // ---- 数据提取路由 ----
       if (isPokemonCard) {
         const commonData = getCommonData()
         const headerEl = document.querySelector('h1.pageHeader.cardDetail')
@@ -184,7 +183,6 @@ async function processDetailPage(browser, detailUrl) {
           },
         }
       } else {
-        // [BUG FIX] 默认归类为训练家卡 (处理 .commonHeader 为空或未知类型的情况)
         const commonData = getCommonData()
         return {
           card_url: window.location.href,
@@ -210,7 +208,6 @@ async function processDetailPage(browser, detailUrl) {
     const finalCardData = cardDataPayload.data
     finalCardData.card_url = cardDataPayload.card_url
 
-    // 下载主卡图
     let relativeCardImagePath = null
     if (finalCardData.card_image_url) {
       const imageName = path.basename(finalCardData.card_image_url)
@@ -227,7 +224,6 @@ async function processDetailPage(browser, detailUrl) {
       }
     }
 
-    // 下载卡包符号图
     let relativeExpansionSymbolPath = null
     if (finalCardData.card_info.expansion_symbol_image_url) {
       const imageName = path.basename(finalCardData.card_info.expansion_symbol_image_url)
@@ -244,7 +240,6 @@ async function processDetailPage(browser, detailUrl) {
       }
     }
 
-    // 设置最终路径并删除临时URL字段
     delete finalCardData.card_image_url
     finalCardData.card_image_path = relativeCardImagePath
 
@@ -265,19 +260,34 @@ async function processDetailPage(browser, detailUrl) {
  */
 async function scrapePokemonCards() {
   console.log('进行初始化设置...')
-  // 同时创建两个图片目录
   await fs.mkdir(CONFIG.CARD_IMAGE_DIR, { recursive: true })
   await fs.mkdir(CONFIG.EXPANSION_SYMBOL_IMAGE_DIR, { recursive: true })
-  await fs.writeFile(CONFIG.JSONL_FILE_NAME, '', 'utf8')
+
+  // --- 断点续传逻辑 ---
+  const processedUrls = new Set()
+  if (existsSync(CONFIG.JSONL_FILE_NAME)) {
+    console.log(`发现已存在的进度文件: ${CONFIG.JSONL_FILE_NAME}，正在读取进度...`)
+    const fileContent = readFileSync(CONFIG.JSONL_FILE_NAME, 'utf8')
+    const lines = fileContent.split('\n').filter((line) => line.trim() !== '')
+    lines.forEach((line) => {
+      try {
+        const parsed = JSON.parse(line)
+        if (parsed.card_url) {
+          processedUrls.add(parsed.card_url)
+        }
+      } catch (e) {
+        console.warn('解析JSONL文件中的一行失败:', line)
+      }
+    })
+    console.log(`已加载 ${processedUrls.size} 条已处理的URL记录。`)
+  }
 
   console.log('启动浏览器...')
   const browser = await puppeteer.launch({ headless: 'new' })
   const page = await browser.newPage()
-  // 为主列表页面设置视口
   await page.setViewport({ width: 1920, height: 1080 })
 
   try {
-    // --- 1. 边翻页边处理 ---
     console.log(`正在导航到列表页面: ${CONFIG.START_URL}`)
     await page.goto(CONFIG.START_URL, { waitUntil: 'networkidle2', timeout: CONFIG.NAVIGATION_TIMEOUT })
 
@@ -300,8 +310,8 @@ async function scrapePokemonCards() {
     baseUrl.searchParams.delete('pageNo')
 
     let totalProcessedCount = 0
+    let newItemsProcessed = 0
 
-    // 外层循环：遍历所有列表页
     for (let currentPage = startPage; currentPage <= totalPages; currentPage++) {
       if (currentPage !== startPage) {
         const currentPageUrl = new URL(baseUrl.toString())
@@ -320,34 +330,44 @@ async function scrapePokemonCards() {
           .filter((link) => link)
       })
 
-      console.log(`  > 找到 ${linksOnPage.length} 个链接，开始并发处理...`)
+      const urlsToProcess = linksOnPage.filter((url) => !processedUrls.has(url))
+      const skippedCount = linksOnPage.length - urlsToProcess.length
 
-      // 内层循环：并发处理当前页的链接
-      for (let i = 0; i < linksOnPage.length; i += CONFIG.CONCURRENT_PAGES) {
-        const chunk = linksOnPage.slice(i, i + CONFIG.CONCURRENT_PAGES)
+      if (skippedCount > 0) {
+        console.log(`  > 跳过 ${skippedCount} 个已处理的链接。`)
+      }
+
+      if (urlsToProcess.length === 0) {
+        console.log(`  > 当前页所有链接均已处理，跳至下一页。`)
+        continue
+      }
+
+      console.log(`  > 找到 ${urlsToProcess.length} 个新链接，开始并发处理...`)
+
+      for (let i = 0; i < urlsToProcess.length; i += CONFIG.CONCURRENT_PAGES) {
+        const chunk = urlsToProcess.slice(i, i + CONFIG.CONCURRENT_PAGES)
 
         const promises = chunk.map((url) => processDetailPage(browser, url))
         const results = await Promise.allSettled(promises)
 
         for (const result of results) {
-          totalProcessedCount++
           if (result.status === 'fulfilled' && result.value) {
             const finalCardData = result.value
             await fs.appendFile(CONFIG.JSONL_FILE_NAME, JSON.stringify(finalCardData) + '\n', 'utf8')
+            newItemsProcessed++
             console.log(
-              `  [${totalProcessedCount}] ✅ 已抓取 [${finalCardData.card_category}] 卡: ${
+              `  [${processedUrls.size + newItemsProcessed}] ✅ 已抓取 [${finalCardData.card_category}] 卡: ${
                 typeof finalCardData.name === 'object' ? finalCardData.name.zh : finalCardData.name
               }`
             )
           } else if (result.status === 'rejected') {
-            console.error(`  [${totalProcessedCount}] ❌ 任务失败: ${result.reason}`)
+            console.error(`  ❌ 任务失败: ${result.reason}`)
           }
         }
       }
     }
 
-    // --- 3. 抓取完成后，执行转换 ---
-    console.log(`\n成功处理了 ${totalProcessedCount} 张卡片.`)
+    console.log(`\n本轮运行新处理了 ${newItemsProcessed} 张卡片.`)
     await convertJsonlToJson(CONFIG.JSONL_FILE_NAME, CONFIG.JSON_FILE_NAME)
   } catch (error) {
     console.error('爬虫主程序发生严重错误:', error)
