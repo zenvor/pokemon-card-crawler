@@ -1,0 +1,22 @@
+{
+  "name": "pokemon-card-crawler",
+  "version": "1.0.0",
+  "description": "宝可梦卡片数据爬虫",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --inspect index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "pokemon",
+    "crawler",
+    "puppeteer"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "puppeteer": "^24.10.0"
+  }
+}

@@ -1,0 +1,62 @@
+# Node.js 依赖
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 日志文件
+logs
+*.log
+
+# 缓存文件
+.npm
+.eslintcache
+.parcel-cache
+
+# 操作系统生成的文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE 和编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 构建输出
+dist/
+build/
+out/
+
+# 临时文件
+*.tmp
+*.temp
+
+# 爬虫生成的文件
+images/
+*.jsonl
+*.json
+!example.json
+!package.json
+!package-lock.json
+
+# 测试覆盖率
+coverage/
+.nyc_output
+
+# 其他
+*.tgz
+*.tar.gz 

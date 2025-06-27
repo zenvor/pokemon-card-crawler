@@ -1,0 +1,54 @@
+{
+    "card_id": "hk00008497",
+    "card_type": "基礎",
+    "name": {
+      "zh": "保母曼波",
+      "en": "Alomomola"
+    },
+    "dex_info": {
+      "national_no": "0594",
+      "category": "看護寶可夢",
+      "height": "1.2m",
+      "weight": "31.6kg"
+    },
+    "stats": {
+      "hp": 120
+    },
+    "attributes": {
+      "weakness": "電×2",
+      "resistance": "無",
+      "retreat_cost": 2
+    },
+    "abilities": [
+      {
+        "name": "衝浪",
+        "type": "水",
+        "damage": 30,
+        "effect": null
+      },
+      {
+        "name": "水流斬",
+        "type": "水",
+        "damage": 120,
+        "effect": "下個自己的回合無法使用招式"
+      }
+    ],
+    "card_info": {
+      "illustrator": "Shinji Kanda",
+      "card_number": "G SVAW F 001/023",
+      "rarity": "F稀有",
+      "set": "朱&紫"
+    },
+    "flavor_text": "會用魚鰭溫柔地抱住受傷或是虛弱的寶可夢，並用特殊的黏膜加以治療。",
+    "appearance": {
+      "primary_color": "粉紅",
+      "secondary_color": "藍",
+      "scene": "海洋",
+      "elements": [
+        "波浪",
+        "珊瑚",
+        "發光球體"
+      ]
+    }
+  }
+  
