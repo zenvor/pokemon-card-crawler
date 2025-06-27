@@ -1,217 +1,91 @@
-# 宝可梦卡片爬虫
+# 宝可梦集换式卡牌官网爬虫
 
-使用 Puppeteer v24.10.0 开发的宝可梦卡片数据爬虫，用于抓取 https://asia.pokemon-card.com 网站上的卡片信息。
+这是一个基于 Node.js 和 Puppeteer 构建的强大网络爬虫，专门用于抓取宝可梦集换式卡牌游戏亚洲官网（`asia.pokemon-card.com`）的卡牌数据。
 
-## 功能特性
+该项目从一个简单的链接提取脚本开始，经过多次迭代，现已发展成为一个功能完备、稳定且高效的数据采集工具。它能够系统地抓取网站上的所有卡牌信息，并将其整理成结构化的 JSON 文件，同时下载相关的图片资源。
 
-- ✅ 启动 Puppeteer 浏览器并打开目标页面
-- ✅ 等待页面加载完成，选取 `rightColumn` 元素
-- ✅ 获取所有 `card` 类的 `<li>` 元素
-- ✅ 提取每个卡片的详情页链接
-- ✅ 将相对链接转换为完整链接
-- ✅ 逐个访问卡片详情页面并提取完整数据
-- ✅ 支持能量类型图片到中文文本的映射
-- ✅ 提取卡片的所有详细信息（名称、属性、招式、图鉴等）
-- ✅ 自动下载卡片高清图片到本地
-- ✅ 渐进式写入 JSONL 格式文件（实时保存，断点续传友好）
-- ✅ 图鉴编号自动补零格式化（如：0001、0025）
-- ✅ 完善的错误处理和资源清理机制
+## ✨ 主要功能
 
-## 安装依赖
+  - **全卡种支持**:能够自动识别并分别处理**宝可梦卡**、**训练家卡**和**能量卡**，并为不同类型的卡牌使用最合适的 JSON 结构。
+  - **数据完整性**: 抓取包括基本信息、HP、技能、属性、进化链、图鉴信息、卡包信息在内的详尽字段。
+  - **图片下载**: 自动下载每张卡牌的高清大图和其所属的卡包符号图标，并分别存放在 `card-images` 和 `expansion-symbol-images` 目录中。
+  - **智能翻页**: 自动检测网站的总页数，并支持从任意指定页面开始，完成所有分页的遍历抓取，确保数据无遗漏。
+  - **并发处理**: 支持配置并发数量，可同时处理多个详情页的抓取任务，极大地提升了数据采集效率。
+  - **高容错性**: 采用“边翻页边处理”的模式，并将数据实时增量写入 `.jsonl` 文件。即使在长时间运行中意外中断，也只会丢失少量正在处理的数据，保证了已抓取数据的安全。
+  - **双格式输出**: 最终数据会同时提供两种格式：
+    1.  `pokemon_cards.jsonl` (JSON Lines): 方便流式处理和灾难恢复。
+    2.  `pokemon_cards.json`: 格式化后的标准 JSON 数组，方便直接在其他应用中导入和使用。
+  - **易于配置**: 所有核心参数（如并发数、文件名、起始URL）都集中在文件顶部的 `CONFIG` 对象中，方便用户按需调整。
+
+## 🛠️ 技术栈
+
+  - **[Node.js](https://nodejs.org/)**: 脚本的运行环境。
+  - **[Puppeteer](https://pptr.dev/)**: 核心库，用于驱动一个无头（Headless）Chrome 浏览器来进行网页的导航、交互和数据提取。
+
+## 📁 文件结构
+
+成功运行脚本后，您的项目目录将如下所示：
+
+```
+.
+├── card-images/                # 存放已下载的卡牌图片
+│   ├── hk00012345.png
+│   └── ...
+├── expansion-symbol-images/    # 存放已下载的卡包符号图片
+│   ├── svaw_f.png
+│   └── ...
+├── node_modules/
+├── pokemon_cards.json          # 最终输出的标准JSON文件
+├── pokemon_cards.jsonl         # 实时写入的JSONL文件
+├── package.json
+├── package-lock.json
+└── scraper.js                  # 爬虫主脚本
+```
+
+## 🚀 安装与运行
+
+### 1\. 环境准备
+
+请确保您的电脑上已经安装了 [Node.js](https://nodejs.org/) (推荐 v20 或更高版本)。
+
+### 2\. 安装依赖
+
+在您的项目根目录下，打开终端并运行以下命令来安装 Puppeteer：
 
 ```bash
-cd puppeteer
-npm install
+npm install puppeteer
 ```
 
-## 使用方法
+### 3\. 配置（可选）
 
-### 基础运行
-```bash
-npm start
-```
-
-### 开发模式（带调试）
-```bash
-npm run dev
-```
-
-## 代码结构
-
-```
-puppeteer/
-├── package.json        # 项目配置和依赖
-├── index.js           # 主爬虫代码
-└── README.md          # 说明文档
-```
-
-## 主要类和方法
-
-### PokemonCardCrawler 类
-
-- `init()` - 初始化浏览器和页面
-- `getCardLinks()` - 获取卡片列表页面的所有卡片链接
-- `visitCardDetail(cardUrl)` - 访问单个卡片详情页面
-- `visitAllCardDetails(cardLinks)` - 批量访问所有卡片详情页面
-- `cleanup()` - 清理浏览器资源
-
-## 配置选项
-
-### 浏览器配置
-- `headless: false` - 显示浏览器窗口（便于调试）
-- `defaultViewport` - 设置视口大小为 1280x720
-- 包含防检测的启动参数
-
-### 请求策略
-- 使用 `networkidle2` 等待策略确保页面完全加载
-- 内置随机延迟（1-3秒）避免被反爬虫
-- 设置合理的超时时间（30秒）
-
-## 运行流程
-
-1. **启动阶段**：初始化 Puppeteer 浏览器
-2. **页面加载**：打开目标页面并等待加载完成
-3. **元素定位**：查找 `div.rightColumn` 元素
-4. **链接提取**：获取所有 `li.card` 中的 `<a>` 标签 href 属性
-5. **链接转换**：将相对路径转换为完整 URL
-6. **结果输出**：在控制台显示所有找到的卡片链接
-
-## 数据结构
-
-每个卡片的数据结构如下：
-
-```json
-{
-  "card_id": "hk00008497",
-  "card_type": "基礎",
-  "name": {
-    "zh": "保母曼波",
-    "en": null
-  },
-  "dex_info": {
-    "national_no": "0594",
-    "category": "看護寶可夢",
-    "height": "1.2m",
-    "weight": "31.6kg"
-  },
-  "stats": {
-    "hp": 120
-  },
-  "attributes": {
-    "weakness": "雷×2",
-    "resistance": "無",
-    "retreat_cost": 2
-  },
-  "abilities": [
-    {
-      "name": "衝浪",
-      "type": "水",
-      "damage": 30,
-      "effect": null
-    }
-  ],
-  "card_info": {
-    "illustrator": "Shinji Kanda",
-    "card_number": "G SVAW F 001/023",
-    "rarity": "F稀有",
-    "set": "朱&紫"
-  },
-  "flavor_text": "會用魚鰭溫柔地抱住受傷或是虛弱的寶可夢，並用特殊的黏膜加以治療。",
-  "appearance": null,
-  "image_path": "cardImages/hk00008497.jpg"
-}
-```
-
-## 示例输出
-
-```
-=== 宝可梦卡片数据爬虫启动 ===
-
-进行初始化设置...
-正在启动 Puppeteer...
-Puppeteer 启动完成
-正在打开页面: https://asia.pokemon-card.com/hk/card-search/list/?expansionCodes=SVAW
-页面加载完成，等待内容渲染...
-找到 rightColumn 元素，开始提取卡片链接...
-成功提取到 23 个卡片链接:
-1. https://asia.pokemon-card.com/hk/card-search/detail/8497/
-2. https://asia.pokemon-card.com/hk/card-search/detail/8498/
-...
-
---- 开始逐个处理卡片，结果将实时写入 pokemon_cards_SVAW.jsonl ---
-
-[1/23] ✅ 已抓取并保存: 保母曼波 (hk00008497)
-[2/23] ✅ 已抓取并保存: 螢光魚 (hk00008498)
-[3/23] ✅ 已抓取并保存: 霓虹魚 (hk00008499)
-...
-
-🎉 全部操作完成！数据已保存在 pokemon_cards_SVAW.jsonl，图片已保存在 cardImages 目录。
-
-正在关闭浏览器...
-浏览器已关闭
-
-=== 爬虫运行完成 ===
-```
-
-## 能量类型映射
-
-爬虫内置了能量类型图片到中文文本的映射表：
+打开 `scraper.js` 文件，您可以在文件顶部的 `CONFIG` 对象中修改各项配置：
 
 ```javascript
-const energyMap = {
-    'Water.png': '水',
-    'Lightning.png': '電',
-    'Colorless.png': '無色',
-    'Fighting.png': '鬥',
-    'Psychic.png': '超',
-    'Fire.png': '火',
-    'Grass.png': '草',
-    'Darkness.png': '惡',
-    'Metal.png': '鋼',
-    'Dragon.png': '龍',
-    'Fairy.png': '妖',
+const CONFIG = {
+  // 并发处理详情页的数量
+  CONCURRENT_PAGES: 5, 
+  // 卡牌图片存储的目录名
+  CARD_IMAGE_DIR: 'card-images',
+  // 卡包符号图片存储的目录名
+  EXPANSION_SYMBOL_IMAGE_DIR: 'expansion-symbol-images',
+  // ...其他配置
+  START_URL: 'https://asia.pokemon-card.com/hk/card-search/list/',
 };
 ```
 
-## 自定义配置
+### 4\. 运行爬虫
 
-### 修改目标网址
+一切准备就绪后，运行以下命令启动爬虫：
 
-在 `PokemonCardCrawler` 构造函数中修改 `targetUrl`：
-
-```javascript
-constructor() {
-    // ... 其他配置
-    this.targetUrl = 'https://asia.pokemon-card.com/hk/card-search/list/?expansionCodes=YOUR_CODE';
-}
+```bash
+node scraper.js
 ```
 
-### 修改输出文件名
+爬虫会开始执行，并在控制台输出详细的抓取日志。全部任务完成后，您就可以在项目中找到抓取到的数据和图片了。
 
-在 `run()` 方法中调用 `saveData()` 时传入自定义文件名：
+## 📝 注意事项
 
-```javascript
-await this.saveData('custom_filename.json');
-```
-
-### 调整爬取延迟
-
-在 `visitAllCardDetails()` 方法中修改延迟时间：
-
-```javascript
-// 添加延迟避免被反爬虫（1-3秒随机延迟）
-await this.delay(1000 + Math.random() * 2000);
-```
-
-## 注意事项
-
-- 请遵守网站的 robots.txt 和使用条款
-- 建议在请求间添加适当延迟，避免对服务器造成过大压力
-- 当前版本仅抓取链接，具体数据抓取逻辑需要根据实际需求开发
-- 如遇到反爬虫机制，可能需要调整请求策略
-
-## 技术栈
-
-- **Node.js** - 运行环境
-- **Puppeteer v24.10.1** - 无头浏览器控制
-- **ES Modules** - 模块系统 
+  - 本项目仅供学习和技术研究使用，请勿用于商业目的。
+  - 爬虫运行时会消耗较多的网络和计算资源。
+  - 请尊重目标网站的版权和 robots.txt 协议，不要设置过高的并发数，以免对目标服务器造成过大压力。
+  - 如果目标网站的页面结构发生变化，可能会导致此爬虫失效，届时需要更新代码中的选择器。
