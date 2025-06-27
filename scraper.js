@@ -42,8 +42,8 @@ const energyMap = {
 async function scrapePokemonCards() {
   // --- 0. 初始化设置 ---
   const imageDir = 'images'
-  const jsonlFileName = 'pokemon_cards_SVAW.jsonl'
-  const jsonFileName = 'pokemon_cards_SVAW.json'
+  const jsonlFileName = 'pokemon_cards.jsonl'
+  const jsonFileName = 'pokemon_cards.json'
 
   console.log('进行初始化设置...')
   await fs.mkdir(imageDir, { recursive: true })
@@ -52,206 +52,241 @@ async function scrapePokemonCards() {
   console.log('启动浏览器...')
   const browser = await puppeteer.launch({ headless: 'new' })
   const page = await browser.newPage()
-  const listUrl = 'http://127.0.0.1:5500/index.html'
+  // 用户可以修改此URL从任意页面开始
+  const listUrl = 'https://asia.pokemon-card.com/hk/card-search/list/?pageNo=1'
 
   try {
-    // --- 1. 抓取所有卡片详情页的链接 ---
+    // --- 1. 边翻页边处理 ---
     console.log(`正在导航到列表页面: ${listUrl}`)
     await page.goto(listUrl, { waitUntil: 'networkidle2' })
 
-    const cardLinks = await page.evaluate(() => {
-      const cardElements = Array.from(document.querySelectorAll('.rightColumn li.card'))
-      const host = 'https://asia.pokemon-card.com' // window.location.origin
-      return cardElements
-        .map((card) => (card.querySelector('a') ? `${host}${card.querySelector('a').getAttribute('href')}` : null))
-        .filter((link) => link)
+    // 获取总页数和当前页作为起始页
+    const paginationInfo = await page.evaluate(() => {
+      const totalPagesText = document.querySelector('.resultTotalPages')?.innerText || '/ 共1 页'
+      const currentPageText = document.querySelector('.resultPageNumber')?.innerText || '第 1 頁'
+
+      const totalMatch = totalPagesText.match(/(\d+)/)
+      const currentMatch = currentPageText.match(/(\d+)/)
+
+      return {
+        totalPages: totalMatch ? parseInt(totalMatch[1], 10) : 1,
+        startPage: currentMatch ? parseInt(currentMatch[1], 10) : 1,
+      }
     })
-    console.log(`成功提取了 ${cardLinks.length} 个卡片详情页链接.`)
 
-    // --- 2. 遍历链接，抓取、下载并保存每个卡片的数据 ---
-    console.log(`\n--- 开始逐个处理卡片，结果将实时写入 ${jsonlFileName} ---`)
-    for (let i = 0; i < cardLinks.length; i++) {
-      const detailUrl = cardLinks[i]
-      const detailPage = await browser.newPage()
+    const { totalPages, startPage } = paginationInfo
+    console.log(`发现总页数: ${totalPages}，将从第 ${startPage} 页开始抓取。`)
 
-      try {
-        await detailPage.goto(detailUrl, { waitUntil: 'networkidle2' })
+    // 创建一个不包含页面参数的干净基URL
+    const baseUrl = new URL(page.url())
+    baseUrl.searchParams.delete('page')
+    baseUrl.searchParams.delete('pageNo')
 
-        // 在页面上下文中执行抓取逻辑
-        let cardDataPayload = await detailPage.evaluate((energyMap) => {
-          // ---- 通用辅助函数 ----
-          const getText = (selector, root = document) =>
-            root
-              .querySelector(selector)
-              ?.innerText.trim()
-              .replace(/\s*\n\s*/g, ' ') || null
-          const getAttr = (selector, attr) => document.querySelector(selector)?.getAttribute(attr) || null
+    let totalProcessedCount = 0
 
-          // ---- 通用信息提取函数 ----
-          const getCommonData = () => {
-            const card_id = getAttr('.cardImage img', 'src')?.split('/').pop()?.split('.')[0] || null
-            const image_url = getAttr('.cardImage img', 'src')
-            const collectorNumber = getText('.expansionColumn .collectorNumber')
-            const regulationMark = getText('.expansionColumn .alpha')
-            const expansionSymbolImg = getAttr('.expansionColumn .expansionSymbol img', 'src')
-            const expansionCode = expansionSymbolImg?.split('/').pop()?.split('_')[0].toUpperCase() || ''
-            const rarityCode = expansionSymbolImg?.split('_').pop()?.split('.')[0] || ''
-            const card_number = `${regulationMark || ''} ${expansionCode} ${rarityCode.toUpperCase()} ${
-              collectorNumber || ''
-            }`.trim()
+    // 外层循环：遍历所有列表页
+    for (let currentPage = startPage; currentPage <= totalPages; currentPage++) {
+      // 如果不是起始页，则导航到新页面
+      if (currentPage !== startPage) {
+        const currentPageUrl = new URL(baseUrl.toString())
+        currentPageUrl.searchParams.set('page', currentPage)
+        console.log(`\n- 正在导航到列表页面 ${currentPage}/${totalPages}...`)
+        await page.goto(currentPageUrl.toString(), { waitUntil: 'networkidle2' })
+      } else {
+        console.log(`\n- 正在处理列表页面 ${currentPage}/${totalPages} (起始页)...`)
+      }
 
-            return {
-              card_id,
-              image_url, // 临时传递，用于下载
-              name: getText('h1.pageHeader'),
-              card_info: {
-                illustrator: getText('.illustrator a'),
-                card_number: card_number,
-                rarity: rarityCode ? `${rarityCode.toUpperCase()}稀有` : null,
-                set: '朱&紫', // 需根据 expansionCode 进一步完善
-              },
-              appearance: null, // 页面无此信息
+      // 获取当前页的所有详情页链接
+      const linksOnPage = await page.evaluate(() => {
+        const cardElements = Array.from(document.querySelectorAll('.rightColumn li.card'))
+        const host = window.location.origin
+        return cardElements
+          .map((card) => (card.querySelector('a') ? `${host}${card.querySelector('a').getAttribute('href')}` : null))
+          .filter((link) => link)
+      })
+
+      console.log(`  > 找到 ${linksOnPage.length} 个链接，开始逐个处理...`)
+
+      // 内层循环：立即处理当前页的链接
+      for (const detailUrl of linksOnPage) {
+        const detailPage = await browser.newPage()
+        totalProcessedCount++
+
+        try {
+          await detailPage.goto(detailUrl, { waitUntil: 'networkidle2' })
+
+          let cardDataPayload = await detailPage.evaluate((energyMap) => {
+            const getText = (selector, root = document) =>
+              root
+                .querySelector(selector)
+                ?.innerText.trim()
+                .replace(/\s*\n\s*/g, ' ') || null
+            const getAttr = (selector, attr) => document.querySelector(selector)?.getAttribute(attr) || null
+
+            const getCommonData = () => {
+              return {
+                card_id: getAttr('.cardImage img', 'src')?.split('/').pop()?.split('.')[0] || null,
+                image_url: getAttr('.cardImage img', 'src'),
+                name: getText('h1.pageHeader'),
+                card_info: {
+                  illustrator: getText('.illustrator a'),
+                  card_number: null,
+                  rarity: null,
+                  set: null,
+                  expansion_symbol_img: getAttr('.expansionColumn .expansionSymbol img', 'src'),
+                  expansion_symbol: null,
+                  alpha: getText('.expansionColumn .alpha'),
+                  collector_number: getText('.expansionColumn .collectorNumber'),
+                },
+                appearance: null,
+              }
             }
+
+            const isPokemonCard = document.querySelector('.evolveMarker') !== null
+            const commonHeaderText = getText('.cardInformationColumn .commonHeader')
+
+            if (isPokemonCard) {
+              const commonData = getCommonData()
+              const headerEl = document.querySelector('h1.pageHeader.cardDetail')
+              let name_zh = null,
+                card_type = null
+              if (headerEl) {
+                card_type = getText('.evolveMarker', headerEl)
+                const nameElClone = headerEl.cloneNode(true)
+                nameElClone.querySelector('.evolveMarker')?.remove()
+                name_zh = nameElClone.innerText.trim()
+              }
+              const evolutionSteps = Array.from(document.querySelectorAll('.evolution .step a'))
+              const evolution_chain = evolutionSteps.map((step, index) => ({
+                stage: index,
+                name: step.innerText.trim(),
+              }))
+              const dexHeader = getText('.extraInformation h3')
+              let national_no = dexHeader?.match(/No\.(\d+)/)?.[1] || null
+              if (national_no) national_no = national_no.padStart(4, '0')
+              return {
+                card_url: window.location.href,
+                data: {
+                  card_id: commonData.card_id,
+                  card_category: '宝可梦卡',
+                  card_type,
+                  name: { zh: name_zh, en: null },
+                  image_url: commonData.image_url,
+                  stats: { hp: parseInt(getText('.mainInfomation .number'), 10) || null },
+                  abilities: Array.from(document.querySelectorAll('.skillInformation .skill')).map((el) => ({
+                    name: getText('.skillName', el),
+                    type: energyMap[el.querySelector('.skillCost img')?.src.split('/').pop()] || null,
+                    damage: parseInt(getText('.skillDamage', el), 10) || null,
+                    effect: getText('.skillEffect', el) || null,
+                  })),
+                  attributes: {
+                    weakness: (() => {
+                      let w = '無'
+                      const el = document.querySelector('.subInformation .weakpoint')
+                      if (el && el.innerText.trim() !== '--') {
+                        const img = el.querySelector('img')
+                        w = `${energyMap[img?.src.split('/').pop()] || ''}${el.innerText.replace(/\s/g, '')}`
+                      }
+                      return w
+                    })(),
+                    resistance: (() => {
+                      let r = '無'
+                      const el = document.querySelector('.subInformation .resist')
+                      if (el && el.innerText.trim() !== '--') {
+                        const img = el.querySelector('img')
+                        r = `${energyMap[img?.src.split('/').pop()] || ''}${el.innerText.replace(/\s/g, '')}`
+                      }
+                      return r
+                    })(),
+                    retreat_cost: document.querySelectorAll('.subInformation .escape img').length,
+                  },
+                  evolution_chain,
+                  dex_info: {
+                    national_no,
+                    category: dexHeader?.split(' ')?.[1] || null,
+                    height: getText('.extraInformation .size')?.match(/身高.*?(\d+\.?\d*)/)?.[1] + 'm' || null,
+                    weight: getText('.extraInformation .size')?.match(/體重.*?(\d+\.?\d*)/)?.[1] + 'kg' || null,
+                  },
+                  flavor_text: getText('.extraInformation .discription'),
+                  card_info: commonData.card_info,
+                  appearance: commonData.appearance,
+                },
+              }
+            } else if (['物品卡', '支援者卡', '競技場卡', '寶可夢道具'].includes(commonHeaderText)) {
+              const commonData = getCommonData()
+              return {
+                card_url: window.location.href,
+                data: {
+                  card_id: commonData.card_id,
+                  card_category: '训练家卡',
+                  sub_type: commonHeaderText,
+                  name: commonData.name,
+                  image_url: commonData.image_url,
+                  effect: getText('.skillEffect'),
+                  card_info: commonData.card_info,
+                  appearance: commonData.appearance,
+                },
+              }
+            } else if (['基本能量卡', '特殊能量卡'].includes(commonHeaderText)) {
+              const commonData = getCommonData()
+              return {
+                card_url: window.location.href,
+                data: {
+                  card_id: commonData.card_id,
+                  card_category: '能量卡',
+                  sub_type: commonHeaderText,
+                  name: commonData.name,
+                  image_url: commonData.image_url,
+                  effect: commonHeaderText === '特殊能量卡' ? getText('.skillEffect') : null,
+                  card_info: commonData.card_info,
+                  appearance: commonData.appearance,
+                },
+              }
+            }
+            return null
+          }, energyMap)
+
+          if (!cardDataPayload) {
+            console.log(`  [${totalProcessedCount}] ⚠️  跳过未知类型的卡片: ${detailUrl}`)
+            continue
           }
 
-          // ---- 卡片种类判断 (分类器) ----
-          const isPokemonCard = document.querySelector('.evolveMarker') !== null
-          const commonHeaderText = getText('.commonHeader')
-
-          // ---- 数据提取路由 ----
-          if (isPokemonCard) {
-            // --- 是宝可梦卡 ---
-            const commonData = getCommonData()
-            const headerEl = document.querySelector('h1.pageHeader.cardDetail')
-            let name_zh = null,
-              card_type = null
-            if (headerEl) {
-              card_type = getText('.evolveMarker', headerEl)
-              const nameElClone = headerEl.cloneNode(true)
-              nameElClone.querySelector('.evolveMarker')?.remove()
-              name_zh = nameElClone.innerText.trim()
-            }
-
-            const evolutionSteps = Array.from(document.querySelectorAll('.evolution .step a'))
-            const evolution_chain = evolutionSteps.map((step, index) => ({ stage: index, name: step.innerText.trim() }))
-
-            const dexHeader = getText('.extraInformation h3')
-            let national_no = dexHeader?.match(/No\.(\d+)/)?.[1] || null
-            if (national_no) national_no = national_no.padStart(4, '0')
-
-            const data = {
-              card_id: commonData.card_id,
-              card_category: '宝可梦卡',
-              card_type: card_type,
-              name: { zh: name_zh, en: null },
-              image_url: commonData.image_url,
-              stats: { hp: parseInt(getText('.mainInfomation .number'), 10) || null },
-              abilities: Array.from(document.querySelectorAll('.skillInformation .skill')).map((el) => ({
-                name: getText('.skillName', el),
-                type: energyMap[el.querySelector('.skillCost img')?.src.split('/').pop()] || null,
-                damage: parseInt(getText('.skillDamage', el), 10) || null,
-                effect: getText('.skillEffect', el) || null,
-              })),
-              attributes: {
-                weakness: (() => {
-                  let w = '無'
-                  const el = document.querySelector('.subInformation .weakpoint')
-                  if (el && el.innerText.trim() !== '--') {
-                    const img = el.querySelector('img')
-                    w = `${energyMap[img?.src.split('/').pop()] || ''}${el.innerText.replace(/\s/g, '')}`
-                  }
-                  return w
-                })(),
-                resistance: (() => {
-                  let r = '無'
-                  const el = document.querySelector('.subInformation .resist')
-                  if (el && el.innerText.trim() !== '--') {
-                    const img = el.querySelector('img')
-                    r = `${energyMap[img?.src.split('/').pop()] || ''}${el.innerText.replace(/\s/g, '')}`
-                  }
-                  return r
-                })(),
-                retreat_cost: document.querySelectorAll('.subInformation .escape img').length,
-              },
-              evolution_chain,
-              dex_info: {
-                national_no,
-                category: dexHeader?.split(' ')?.[1] || null,
-                height: getText('.extraInformation .size')?.match(/身高.*?(\d+\.?\d*)/)?.[1] + 'm' || null,
-                weight: getText('.extraInformation .size')?.match(/體重.*?(\d+\.?\d*)/)?.[1] + 'kg' || null,
-              },
-              flavor_text: getText('.extraInformation .discription'),
-              card_info: commonData.card_info,
-              appearance: commonData.appearance,
-            }
-            return { data }
-          } else if (['物品卡', '支援者卡', '競技場卡', '寶可夢道具'].includes(commonHeaderText)) {
-            // --- 是训练家卡 ---
-            const commonData = getCommonData()
-            const data = {
-              card_id: commonData.card_id,
-              card_category: '训练家卡',
-              sub_type: commonHeaderText,
-              name: commonData.name,
-              image_url: commonData.image_url,
-              effect: getText('.skillEffect'),
-              card_info: commonData.card_info,
-              appearance: commonData.appearance,
-            }
-            return { data }
-          } else if (['基本能量卡', '特殊能量卡'].includes(commonHeaderText)) {
-            // --- 是能量卡 ---
-            const commonData = getCommonData()
-            const data = {
-              card_id: commonData.card_id,
-              card_category: '能量卡',
-              sub_type: commonHeaderText,
-              name: commonData.name,
-              image_url: commonData.image_url,
-              effect: commonHeaderText === '特殊能量卡' ? getText('.skillEffect') : null,
-              card_info: commonData.card_info,
-              appearance: commonData.appearance,
-            }
-            return { data }
-          }
-
-          return null // 未知类型
-        }, energyMap)
-
-        if (!cardDataPayload) {
-          console.log(`[${i + 1}/${cardLinks.length}] ⚠️  跳过未知类型的卡片: ${detailUrl}`)
-          continue
-        }
-
-        // ---- 后续处理 (下载图片、写入文件) ----
-        let relativeImagePath = null
-        if (cardDataPayload.data && cardDataPayload.data.image_url) {
-          const imageName = path.basename(cardDataPayload.data.image_url)
-          relativeImagePath = path.join(imageDir, imageName)
-          const imageResponse = await detailPage.goto(cardDataPayload.data.image_url)
-          if (imageResponse.ok()) await fs.writeFile(relativeImagePath, await imageResponse.buffer())
-          else relativeImagePath = null
-        }
-
-        if (cardDataPayload.data) {
           const finalCardData = cardDataPayload.data
-          delete finalCardData.image_url // 删除临时的image_url字段
+          finalCardData.card_url = cardDataPayload.card_url
+
+          let relativeImagePath = null
+          if (finalCardData.image_url) {
+            const imageName = path.basename(finalCardData.image_url)
+            relativeImagePath = path.join(imageDir, imageName)
+            try {
+              const imageResponse = await detailPage.goto(finalCardData.image_url)
+              if (imageResponse.ok()) await fs.writeFile(relativeImagePath, await imageResponse.buffer())
+              else relativeImagePath = null
+            } catch (e) {
+              console.log(`  下载图片失败: ${e.message}`)
+              relativeImagePath = null
+            }
+          }
+
+          delete finalCardData.image_url
           finalCardData.image_path = relativeImagePath
+
           await fs.appendFile(jsonlFileName, JSON.stringify(finalCardData) + '\n', 'utf8')
           console.log(
-            `[${i + 1}/${cardLinks.length}] ✅ 已抓取 [${finalCardData.card_category}] 卡: ${
+            `  [${totalProcessedCount}] ✅ 已抓取 [${finalCardData.card_category}] 卡: ${
               typeof finalCardData.name === 'object' ? finalCardData.name.zh : finalCardData.name
             }`
           )
+        } catch (err) {
+          console.log(`  [${totalProcessedCount}] ❌ 处理 ${detailUrl} 时发生错误: ${err.message}`)
+        } finally {
+          await detailPage.close()
         }
-      } catch (err) {
-        console.log(`[${i + 1}/${cardLinks.length}] ❌ 处理 ${detailUrl} 时发生错误: ${err.message}`)
-      } finally {
-        await detailPage.close()
       }
     }
 
     // --- 3. 抓取完成后，执行转换 ---
+    console.log(`\n成功处理了 ${totalProcessedCount} 张卡片.`)
     await convertJsonlToJson(jsonlFileName, jsonFileName)
   } catch (error) {
     console.error('爬虫主程序发生严重错误:', error)
