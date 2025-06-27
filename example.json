@@ -1,16 +1,13 @@
 {
+    "card_url": "https://asia.pokemon-card.com/hk/card-search/details/hk00008497",
     "card_id": "hk00008497",
+    "card_category": "宝可梦卡",
     "card_type": "基礎",
     "name": {
       "zh": "保母曼波",
       "en": "Alomomola"
     },
-    "dex_info": {
-      "national_no": "0594",
-      "category": "看護寶可夢",
-      "height": "1.2m",
-      "weight": "31.6kg"
-    },
+    "card_image_path": "card-images/hk00008497.jpg",
     "stats": {
       "hp": 120
     },
@@ -33,13 +30,29 @@
         "effect": "下個自己的回合無法使用招式"
       }
     ],
-    "card_info": {
-      "illustrator": "Shinji Kanda",
-      "card_number": "G SVAW F 001/023",
-      "rarity": "F稀有",
-      "set": "朱&紫"
+    "evolution_chain": [
+      {
+        "stage": 0,
+        "name": "保母曼波"
+      }
+    ],
+    "dex_info": {
+      "national_no": "0594",
+      "category": "看護寶可夢",
+      "height": "1.2m",
+      "weight": "31.6kg"
     },
     "flavor_text": "會用魚鰭溫柔地抱住受傷或是虛弱的寶可夢，並用特殊的黏膜加以治療。",
+    "card_info": {
+      "illustrator": "Shinji Kanda",
+      "card_number": null,
+      "rarity": null,
+      "set": null,
+      "expansion_symbol_image_path": "expansion-symbol-images/svaw_symbol.png",
+      "expansion_symbol": null,
+      "alpha": "G",
+      "collector_number": "001/023"
+    },
     "appearance": {
       "primary_color": "粉紅",
       "secondary_color": "藍",
