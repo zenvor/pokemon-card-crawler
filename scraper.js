@@ -2,6 +2,23 @@ import puppeteer from 'puppeteer'
 import fs from 'fs/promises'
 import path from 'path'
 
+// =================================================================
+// --- 配置区域 ---
+// =================================================================
+const CONFIG = {
+  // 并发处理详情页的数量
+  CONCURRENT_PAGES: 5,
+  // 图片存储的目录名
+  IMAGE_DIR: 'images',
+  // 增量写入的JSONL文件名
+  JSONL_FILE_NAME: 'pokemon_cards.jsonl',
+  // 最终输出的标准JSON文件名
+  JSON_FILE_NAME: 'pokemon_cards.json',
+  // 爬虫起始的列表页面URL
+  START_URL: 'https://asia.pokemon-card.com/hk/card-search/list/',
+}
+// =================================================================
+
 /**
  * 将JSONL文件（每行一个JSON对象）转换为标准的、格式化的JSON数组文件。
  * @param {string} jsonlPath - 输入的 .jsonl 文件路径。
@@ -186,7 +203,7 @@ async function processDetailPage(browser, detailUrl) {
     let relativeImagePath = null
     if (finalCardData.image_url) {
       const imageName = path.basename(finalCardData.image_url)
-      relativeImagePath = path.join('images', imageName)
+      relativeImagePath = path.join(CONFIG.IMAGE_DIR, imageName)
       try {
         const imageResponse = await detailPage.goto(finalCardData.image_url)
         if (imageResponse.ok()) await fs.writeFile(relativeImagePath, await imageResponse.buffer())
@@ -213,25 +230,18 @@ async function processDetailPage(browser, detailUrl) {
  * 主抓取函数
  */
 async function scrapePokemonCards() {
-  // --- 0. 初始化设置 ---
-  const CONCURRENT_PAGES = 5 // 可配置的并发数量
-  const imageDir = 'images'
-  const jsonlFileName = 'pokemon_cards.jsonl'
-  const jsonFileName = 'pokemon_cards.json'
-
   console.log('进行初始化设置...')
-  await fs.mkdir(imageDir, { recursive: true })
-  await fs.writeFile(jsonlFileName, '', 'utf8')
+  await fs.mkdir(CONFIG.IMAGE_DIR, { recursive: true })
+  await fs.writeFile(CONFIG.JSONL_FILE_NAME, '', 'utf8')
 
   console.log('启动浏览器...')
   const browser = await puppeteer.launch({ headless: 'new' })
   const page = await browser.newPage()
-  const listUrl = 'https://asia.pokemon-card.com/hk/card-search/list/'
 
   try {
     // --- 1. 边翻页边处理 ---
-    console.log(`正在导航到列表页面: ${listUrl}`)
-    await page.goto(listUrl, { waitUntil: 'networkidle2' })
+    console.log(`正在导航到列表页面: ${CONFIG.START_URL}`)
+    await page.goto(CONFIG.START_URL, { waitUntil: 'networkidle2' })
 
     const paginationInfo = await page.evaluate(() => {
       const totalPagesText = document.querySelector('.resultTotalPages')?.innerText || '/ 共1 页'
@@ -245,7 +255,7 @@ async function scrapePokemonCards() {
     })
 
     const { totalPages, startPage } = paginationInfo
-    console.log(`发现总页数: ${totalPages}，将从第 ${startPage} 页开始抓取。并发数: ${CONCURRENT_PAGES}`)
+    console.log(`发现总页数: ${totalPages}，将从第 ${startPage} 页开始抓取。并发数: ${CONFIG.CONCURRENT_PAGES}`)
 
     const baseUrl = new URL(page.url())
     baseUrl.searchParams.delete('page')
@@ -275,8 +285,8 @@ async function scrapePokemonCards() {
       console.log(`  > 找到 ${linksOnPage.length} 个链接，开始并发处理...`)
 
       // 内层循环：并发处理当前页的链接
-      for (let i = 0; i < linksOnPage.length; i += CONCURRENT_PAGES) {
-        const chunk = linksOnPage.slice(i, i + CONCURRENT_PAGES)
+      for (let i = 0; i < linksOnPage.length; i += CONFIG.CONCURRENT_PAGES) {
+        const chunk = linksOnPage.slice(i, i + CONFIG.CONCURRENT_PAGES)
 
         const promises = chunk.map((url) => processDetailPage(browser, url))
         const results = await Promise.allSettled(promises)
@@ -285,7 +295,7 @@ async function scrapePokemonCards() {
           totalProcessedCount++
           if (result.status === 'fulfilled' && result.value) {
             const finalCardData = result.value
-            await fs.appendFile(jsonlFileName, JSON.stringify(finalCardData) + '\n', 'utf8')
+            await fs.appendFile(CONFIG.JSONL_FILE_NAME, JSON.stringify(finalCardData) + '\n', 'utf8')
             console.log(
               `  [${totalProcessedCount}] ✅ 已抓取 [${finalCardData.card_category}] 卡: ${
                 typeof finalCardData.name === 'object' ? finalCardData.name.zh : finalCardData.name
@@ -300,7 +310,7 @@ async function scrapePokemonCards() {
 
     // --- 3. 抓取完成后，执行转换 ---
     console.log(`\n成功处理了 ${totalProcessedCount} 张卡片.`)
-    await convertJsonlToJson(jsonlFileName, jsonFileName)
+    await convertJsonlToJson(CONFIG.JSONL_FILE_NAME, CONFIG.JSON_FILE_NAME)
   } catch (error) {
     console.error('爬虫主程序发生严重错误:', error)
   } finally {
