@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer'
-import fs from 'fs/promises'
-import { readFileSync, existsSync } from 'fs'
+import { promises as fs } from 'fs'
+import { readFileSync, existsSync, createWriteStream } from 'fs'
 import path from 'path'
 
 // =================================================================
@@ -8,9 +8,11 @@ import path from 'path'
 // =================================================================
 const CONFIG = {
   // 并发处理详情页的数量
-  CONCURRENT_PAGES: 5,
+  CONCURRENT_PAGES: 10,
   // 导航超时时间 (毫秒)，增加超时以防止网络波动
   NAVIGATION_TIMEOUT: 60000,
+  // 日志文件名
+  LOG_FILE_NAME: 'scraper.log',
   // 卡牌图片存储的目录名
   CARD_IMAGE_DIR: 'card-images',
   // 卡包符号图片存储的目录名
@@ -20,7 +22,7 @@ const CONFIG = {
   // 最终输出的标准JSON文件名
   JSON_FILE_NAME: 'pokemon_cards.json',
   // 爬虫起始的列表页面URL
-  START_URL: 'https://asia.pokemon-card.com/hk/card-search/list?pageNo=44',
+  START_URL: 'https://asia.pokemon-card.com/hk/card-search/list/',
 }
 // =================================================================
 
@@ -259,6 +261,29 @@ async function processDetailPage(browser, detailUrl) {
  * 主抓取函数
  */
 async function scrapePokemonCards() {
+  // --- [NEW] 日志记录设置 ---
+  const logStream = createWriteStream(CONFIG.LOG_FILE_NAME, { flags: 'a' })
+  const originalLog = console.log
+  const originalError = console.error
+
+  const logToFile = (message, level = 'INFO') => {
+    const timestamp = new Date().toISOString()
+    logStream.write(`[${timestamp}] [${level}] ${message}\n`)
+  }
+
+  console.log = (...args) => {
+    const message = args.map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : arg)).join(' ')
+    originalLog.apply(console, args)
+    logToFile(message, 'INFO')
+  }
+
+  console.error = (...args) => {
+    const message = args.map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : arg)).join(' ')
+    originalError.apply(console, args)
+    logToFile(message, 'ERROR')
+  }
+
+  // --- 初始化设置 ---
   console.log('进行初始化设置...')
   await fs.mkdir(CONFIG.CARD_IMAGE_DIR, { recursive: true })
   await fs.mkdir(CONFIG.EXPANSION_SYMBOL_IMAGE_DIR, { recursive: true })
@@ -280,10 +305,13 @@ async function scrapePokemonCards() {
       }
     })
     console.log(`已加载 ${processedUrls.size} 条已处理的URL记录。`)
+  } else {
+    // 如果文件不存在，创建一个空文件
+    await fs.writeFile(CONFIG.JSONL_FILE_NAME, '', 'utf8')
   }
 
   console.log('启动浏览器...')
-  const browser = await puppeteer.launch({ headless: 'new' })
+  const browser = await puppeteer.launch({ headless: false }) // 'new' 
   const page = await browser.newPage()
   await page.setViewport({ width: 1920, height: 1080 })
 
@@ -309,7 +337,6 @@ async function scrapePokemonCards() {
     baseUrl.searchParams.delete('page')
     baseUrl.searchParams.delete('pageNo')
 
-    let totalProcessedCount = 0
     let newItemsProcessed = 0
 
     for (let currentPage = startPage; currentPage <= totalPages; currentPage++) {
@@ -374,6 +401,7 @@ async function scrapePokemonCards() {
   } finally {
     console.log(`\n🎉 全部操作完成！`)
     await browser.close()
+    logStream.end() // 安全关闭日志流
   }
 }
 
