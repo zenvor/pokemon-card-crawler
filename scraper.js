@@ -8,6 +8,8 @@ import path from 'path'
 const CONFIG = {
   // 并发处理详情页的数量
   CONCURRENT_PAGES: 5,
+  // 导航超时时间 (毫秒)，增加超时以防止网络波动
+  NAVIGATION_TIMEOUT: 60000,
   // 卡牌图片存储的目录名
   CARD_IMAGE_DIR: 'card-images',
   // 卡包符号图片存储的目录名
@@ -17,7 +19,7 @@ const CONFIG = {
   // 最终输出的标准JSON文件名
   JSON_FILE_NAME: 'pokemon_cards.json',
   // 爬虫起始的列表页面URL
-  START_URL: 'https://asia.pokemon-card.com/hk/card-search/list/',
+  START_URL: 'https://asia.pokemon-card.com/hk/card-search/list?pageNo=44',
 }
 // =================================================================
 
@@ -66,7 +68,7 @@ async function processDetailPage(browser, detailUrl) {
   // 确保为每个新创建的详情页设置视口
   await detailPage.setViewport({ width: 1920, height: 1080 })
   try {
-    await detailPage.goto(detailUrl, { waitUntil: 'networkidle2' })
+    await detailPage.goto(detailUrl, { waitUntil: 'networkidle2', timeout: CONFIG.NAVIGATION_TIMEOUT })
 
     const cardDataPayload = await detailPage.evaluate((energyMap) => {
       const getText = (selector, root = document) =>
@@ -95,9 +97,13 @@ async function processDetailPage(browser, detailUrl) {
         }
       }
 
+      // ---- 卡片种类判断 (分类器) ----
       const isPokemonCard = document.querySelector('.evolveMarker') !== null
       const commonHeaderText = getText('.cardInformationColumn .commonHeader')
+      const knownTrainerTypes = ['物品卡', '支援者卡', '競技場卡', '寶可夢道具']
+      const knownEnergyTypes = ['基本能量卡', '特殊能量卡']
 
+      // ---- 数据提取路由 ----
       if (isPokemonCard) {
         const commonData = getCommonData()
         const headerEl = document.querySelector('h1.pageHeader.cardDetail')
@@ -162,22 +168,7 @@ async function processDetailPage(browser, detailUrl) {
             appearance: commonData.appearance,
           },
         }
-      } else if (['物品卡', '支援者卡', '競技場卡', '寶可夢道具'].includes(commonHeaderText)) {
-        const commonData = getCommonData()
-        return {
-          card_url: window.location.href,
-          data: {
-            card_id: commonData.card_id,
-            card_category: '训练家卡',
-            sub_type: commonHeaderText,
-            name: commonData.name,
-            card_image_url: commonData.card_image_url,
-            effect: getText('.skillEffect'),
-            card_info: commonData.card_info,
-            appearance: commonData.appearance,
-          },
-        }
-      } else if (['基本能量卡', '特殊能量卡'].includes(commonHeaderText)) {
+      } else if (knownEnergyTypes.includes(commonHeaderText)) {
         const commonData = getCommonData()
         return {
           card_url: window.location.href,
@@ -192,8 +183,23 @@ async function processDetailPage(browser, detailUrl) {
             appearance: commonData.appearance,
           },
         }
+      } else {
+        // [BUG FIX] 默认归类为训练家卡 (处理 .commonHeader 为空或未知类型的情况)
+        const commonData = getCommonData()
+        return {
+          card_url: window.location.href,
+          data: {
+            card_id: commonData.card_id,
+            card_category: '训练家卡',
+            sub_type: knownTrainerTypes.includes(commonHeaderText) ? commonHeaderText : null,
+            name: commonData.name,
+            card_image_url: commonData.card_image_url,
+            effect: getText('.skillEffect'),
+            card_info: commonData.card_info,
+            appearance: commonData.appearance,
+          },
+        }
       }
-      return null
     }, energyMap)
 
     if (!cardDataPayload) {
@@ -210,7 +216,9 @@ async function processDetailPage(browser, detailUrl) {
       const imageName = path.basename(finalCardData.card_image_url)
       relativeCardImagePath = path.join(CONFIG.CARD_IMAGE_DIR, imageName)
       try {
-        const imageResponse = await detailPage.goto(finalCardData.card_image_url)
+        const imageResponse = await detailPage.goto(finalCardData.card_image_url, {
+          timeout: CONFIG.NAVIGATION_TIMEOUT,
+        })
         if (imageResponse.ok()) await fs.writeFile(relativeCardImagePath, await imageResponse.buffer())
         else relativeCardImagePath = null
       } catch (e) {
@@ -225,7 +233,9 @@ async function processDetailPage(browser, detailUrl) {
       const imageName = path.basename(finalCardData.card_info.expansion_symbol_image_url)
       relativeExpansionSymbolPath = path.join(CONFIG.EXPANSION_SYMBOL_IMAGE_DIR, imageName)
       try {
-        const imageResponse = await detailPage.goto(finalCardData.card_info.expansion_symbol_image_url)
+        const imageResponse = await detailPage.goto(finalCardData.card_info.expansion_symbol_image_url, {
+          timeout: CONFIG.NAVIGATION_TIMEOUT,
+        })
         if (imageResponse.ok()) await fs.writeFile(relativeExpansionSymbolPath, await imageResponse.buffer())
         else relativeExpansionSymbolPath = null
       } catch (e) {
@@ -269,7 +279,7 @@ async function scrapePokemonCards() {
   try {
     // --- 1. 边翻页边处理 ---
     console.log(`正在导航到列表页面: ${CONFIG.START_URL}`)
-    await page.goto(CONFIG.START_URL, { waitUntil: 'networkidle2' })
+    await page.goto(CONFIG.START_URL, { waitUntil: 'networkidle2', timeout: CONFIG.NAVIGATION_TIMEOUT })
 
     const paginationInfo = await page.evaluate(() => {
       const totalPagesText = document.querySelector('.resultTotalPages')?.innerText || '/ 共1 页'
@@ -297,7 +307,7 @@ async function scrapePokemonCards() {
         const currentPageUrl = new URL(baseUrl.toString())
         currentPageUrl.searchParams.set('pageNo', currentPage)
         console.log(`\n- 正在导航到列表页面 ${currentPage}/${totalPages}...`)
-        await page.goto(currentPageUrl.toString(), { waitUntil: 'networkidle2' })
+        await page.goto(currentPageUrl.toString(), { waitUntil: 'networkidle2', timeout: CONFIG.NAVIGATION_TIMEOUT })
       } else {
         console.log(`\n- 正在处理列表页面 ${currentPage}/${totalPages} (起始页)...`)
       }
