@@ -46,7 +46,8 @@ out/
 *.temp
 
 # 爬虫生成的文件
-images/
+card-images/
+expansion-symbol-images/
 *.jsonl
 *.json
 !example.json
