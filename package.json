@@ -4,9 +4,8 @@
   "description": "宝可梦卡片数据爬虫",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --inspect index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node scraper.js",
+    "dev": "node --inspect scraper.js"
   },
   "keywords": [
     "pokemon",
