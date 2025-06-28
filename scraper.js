@@ -21,31 +21,10 @@ const CONFIG = {
   EXPANSION_SYMBOL_IMAGE_DIR: 'expansion-symbol-images',
   // 增量写入的JSONL文件名
   JSONL_FILE_NAME: 'pokemon_cards.jsonl',
-  // 最终输出的标准JSON文件名
-  JSON_FILE_NAME: 'pokemon_cards.json',
   // 爬虫起始的列表页面URL
   START_URL: 'https://asia.pokemon-card.com/hk/card-search/list/',
 }
 // =================================================================
-
-/**
- * 将JSONL文件（每行一个JSON对象）转换为标准的、格式化的JSON数组文件。
- * @param {string} jsonlPath - 输入的 .jsonl 文件路径。
- * @param {string} jsonPath - 输出的 .json 文件路径。
- */
-async function convertJsonlToJson(jsonlPath, jsonPath) {
-  console.log(`\n正在将 ${jsonlPath} 转换为 ${jsonPath}...`)
-  try {
-    const fileContent = await fs.readFile(jsonlPath, 'utf8')
-    const lines = fileContent.split('\n')
-    const jsonObjects = lines.filter((line) => line.trim() !== '').map((line) => JSON.parse(line))
-    const jsonString = JSON.stringify(jsonObjects, null, 2)
-    await fs.writeFile(jsonPath, jsonString, 'utf8')
-    console.log(`✅ 成功将数据转换为标准JSON格式，并保存到 ${jsonPath}`)
-  } catch (error) {
-    console.error(`❌ 转换文件时出错: ${error.message}`)
-  }
-}
 
 // 能量图标文件名到中文名称的映射表
 const energyMap = {
@@ -401,11 +380,13 @@ async function scrapePokemonCards() {
     }
 
     console.log(`\n本轮运行新处理了 ${newItemsProcessed} 张卡片.`)
-    await convertJsonlToJson(CONFIG.JSONL_FILE_NAME, CONFIG.JSON_FILE_NAME)
+    // [REMOVED] 移除自动转换步骤
+    // await convertJsonlToJson(CONFIG.JSONL_FILE_NAME, CONFIG.JSON_FILE_NAME);
   } catch (error) {
     console.error('爬虫主程序发生严重错误:', error)
   } finally {
-    console.log(`\n🎉 全部操作完成！`)
+    console.log(`\n🎉 全部操作完成！数据已保存至 ${CONFIG.JSONL_FILE_NAME}。`)
+    console.log(`   请运行 'node converter.js' 来生成最终的 .json 文件。`)
     await browser.close()
     logStream.end() // 安全关闭日志流
   }
