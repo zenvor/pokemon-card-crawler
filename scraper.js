@@ -22,7 +22,7 @@ const CONFIG = {
   NAVIGATION_TIMEOUT: 60000,
   // Puppeteer 启动选项
   PUPPETEER_LAUNCH_OPTIONS: {
-    headless: false, // 'new' = 新版无头模式, false = 显示浏览器界面
+    headless: 'new', // 'new' = 新版无头模式, false = 显示浏览器界面
     slowMo: 0, // 以毫秒为单位减慢 Puppeteer 操作，方便调试
     args: [
       // 浏览器启动参数
