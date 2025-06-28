@@ -1,6 +1,6 @@
 # 宝可梦集换式卡牌官网爬虫
 
-<p align="center">
+<p align="left">
   <img src="https://img.shields.io/badge/Node.js-22.x-43853d.svg" alt="Node.js">
   <img src="https://img.shields.io/badge/Puppeteer-24.x-40B5A4.svg" alt="Puppeteer">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
