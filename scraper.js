@@ -14,13 +14,15 @@ const CONFIG = {
   CONCURRENT_PAGES: 5,
   // 失败任务的重试次数
   RETRY_ATTEMPTS: 3,
+  // 每批并发任务之间的延迟时间 (毫秒)
+  DELAY_BETWEEN_BATCHES_MS: 0,
 
   // --- Puppeteer 配置 ---
   // 导航超时时间 (毫秒)
   NAVIGATION_TIMEOUT: 60000,
   // Puppeteer 启动选项
   PUPPETEER_LAUNCH_OPTIONS: {
-    headless: 'new', // 'new' = 新版无头模式, false = 显示浏览器界面
+    headless: false, // 'new' = 新版无头模式, false = 显示浏览器界面
     slowMo: 0, // 以毫秒为单位减慢 Puppeteer 操作，方便调试
     args: [
       // 浏览器启动参数
@@ -402,6 +404,14 @@ async function scrapePokemonCards() {
             )
           } else if (result.status === 'rejected') {
             // 失败的任务已经被 processDetailPage 内部记录，这里无需额外打印
+          }
+        }
+
+        // [NEW] 如果不是最后一批任务，则进行延迟
+        if (i + CONFIG.CONCURRENT_PAGES < urlsToProcess.length) {
+          if (CONFIG.DELAY_BETWEEN_BATCHES_MS > 0) {
+            console.log(`  ...批次处理完成，延迟 ${CONFIG.DELAY_BETWEEN_BATCHES_MS / 1000} 秒...`)
+            await new Promise((res) => setTimeout(res, CONFIG.DELAY_BETWEEN_BATCHES_MS))
           }
         }
       }
