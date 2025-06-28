@@ -7,6 +7,8 @@ import path from 'path'
 // --- 配置区域 ---
 // =================================================================
 const CONFIG = {
+  // 是否启用自动翻页功能
+  ENABLE_PAGINATION: false,
   // 并发处理详情页的数量
   CONCURRENT_PAGES: 5,
   // 导航超时时间 (毫秒)，增加超时以防止网络波动
@@ -246,7 +248,7 @@ async function processDetailPage(browser, detailUrl) {
  * 主抓取函数
  */
 async function scrapePokemonCards() {
-  // --- [NEW] 日志记录设置 ---
+  // --- 日志记录设置 ---
   const logStream = createWriteStream(CONFIG.LOG_FILE_NAME, { flags: 'a' })
   const originalLog = console.log
   const originalError = console.error
@@ -291,7 +293,6 @@ async function scrapePokemonCards() {
     })
     console.log(`已加载 ${processedUrls.size} 条已处理的URL记录。`)
   } else {
-    // 如果文件不存在，创建一个空文件
     await fs.writeFile(CONFIG.JSONL_FILE_NAME, '', 'utf8')
   }
 
@@ -316,7 +317,14 @@ async function scrapePokemonCards() {
     })
 
     const { totalPages, startPage } = paginationInfo
-    console.log(`发现总页数: ${totalPages}，将从第 ${startPage} 页开始抓取。并发数: ${CONFIG.CONCURRENT_PAGES}`)
+    const endPage = CONFIG.ENABLE_PAGINATION ? totalPages : startPage
+
+    console.log(`发现总页数: ${totalPages}，将从第 ${startPage} 页开始抓取。`)
+    if (CONFIG.ENABLE_PAGINATION) {
+      console.log(`自动翻页已启用，将抓取至第 ${endPage} 页。并发数: ${CONFIG.CONCURRENT_PAGES}`)
+    } else {
+      console.log(`自动翻页已禁用，仅抓取第 ${startPage} 页。`)
+    }
 
     const baseUrl = new URL(page.url())
     baseUrl.searchParams.delete('page')
@@ -324,7 +332,7 @@ async function scrapePokemonCards() {
 
     let newItemsProcessed = 0
 
-    for (let currentPage = startPage; currentPage <= totalPages; currentPage++) {
+    for (let currentPage = startPage; currentPage <= endPage; currentPage++) {
       if (currentPage !== startPage) {
         const currentPageUrl = new URL(baseUrl.toString())
         currentPageUrl.searchParams.set('pageNo', currentPage)
@@ -380,8 +388,6 @@ async function scrapePokemonCards() {
     }
 
     console.log(`\n本轮运行新处理了 ${newItemsProcessed} 张卡片.`)
-    // [REMOVED] 移除自动转换步骤
-    // await convertJsonlToJson(CONFIG.JSONL_FILE_NAME, CONFIG.JSON_FILE_NAME);
   } catch (error) {
     console.error('爬虫主程序发生严重错误:', error)
   } finally {
