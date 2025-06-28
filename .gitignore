@@ -50,6 +50,7 @@ card-images/
 expansion-symbol-images/
 *.jsonl
 *.json
+*.log
 !example.json
 !package.json
 !package-lock.json

@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node scraper.js",
-    "dev": "node --inspect scraper.js"
+    "scrape": "node scraper.js",
+    "convert": "node converter.js",
+    "dev": "node --inspect scraper.js",
+    "test": "echo \"No tests specified\" && exit 1"
   },
   "keywords": [
     "pokemon",
@@ -13,7 +16,7 @@
     "puppeteer"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "puppeteer": "^24.10.0"
