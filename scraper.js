@@ -7,14 +7,34 @@ import path from 'path'
 // --- 配置区域 ---
 // =================================================================
 const CONFIG = {
+  // --- 爬虫行为配置 ---
   // 是否启用自动翻页功能
-  ENABLE_PAGINATION: false,
+  ENABLE_PAGINATION: true,
   // 并发处理详情页的数量
   CONCURRENT_PAGES: 5,
-  // 导航超时时间 (毫秒)，增加超时以防止网络波动
-  NAVIGATION_TIMEOUT: 60000,
   // 失败任务的重试次数
   RETRY_ATTEMPTS: 3,
+
+  // --- Puppeteer 配置 ---
+  // 导航超时时间 (毫秒)
+  NAVIGATION_TIMEOUT: 60000,
+  // Puppeteer 启动选项
+  PUPPETEER_LAUNCH_OPTIONS: {
+    headless: 'new', // 'new' = 新版无头模式, false = 显示浏览器界面
+    slowMo: 0, // 以毫秒为单位减慢 Puppeteer 操作，方便调试
+    args: [
+      // 浏览器启动参数
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-zygote',
+      '--no-first-run',
+      '--disable-gpu',
+    ],
+  },
+
+  // --- 文件与目录配置 ---
   // 日志文件名
   LOG_FILE_NAME: 'scraper.log',
   // 卡牌图片存储的目录名
@@ -297,7 +317,7 @@ async function scrapePokemonCards() {
   }
 
   console.log('启动浏览器...')
-  const browser = await puppeteer.launch({ headless: 'new' })
+  const browser = await puppeteer.launch(CONFIG.PUPPETEER_LAUNCH_OPTIONS)
   const page = await browser.newPage()
   await page.setViewport({ width: 1920, height: 1080 })
 
